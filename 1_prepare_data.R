@@ -14,6 +14,7 @@ options(dplyr.summerise.inform = FALSE, width = 80, scipen = 2, digits = 6)
 library(tidyverse)
 library(foreign)
 library(sp)
+library(mapproj)
 
 ## READ IN DATA ================================================================
 
@@ -36,6 +37,7 @@ file.remove(
 ## read in county and state maps
 county_map <- map_data("county")
 state_map  <- map_data("state")
+us_map     <- map_data("usa")
 
 ## SHAPE DATA ==================================================================
 
@@ -53,12 +55,18 @@ cbsa_data <- cbsa_data %>%
     area = ALAND, lon = INTPTLON, lat = INTPTLAT) %>%
   mutate(
     city_type = if_else(city_type == "M1", "metro", "micro"),
-    state = str_remove_all(cbsa_name, ".+, ") %>% str_remove_all("-.*"),
+    state_all = str_remove_all(cbsa_name, ".+, "),
+    state = state_all %>% str_remove_all("-.*"),
     cbsa_name_all = cbsa_name,
     cbsa_name = str_remove_all(cbsa_name, ", .+") %>% str_remove_all("-.*"),
     lon = as.numeric(lon),
-    lat = as.numeric(lat)
+    lat = as.numeric(lat),
+    short_name = str_replace_all(cbsa_name,
+      pattern = "([A-Z][a-z])[^ ]+ ([A-Z][a-z]).*",
+      replacement = "\\1\\2") %>%
+      str_sub(end = 4)
     )
+cbsa_data$short_name[cbsa_data$short_name == "Wash"] <- "DC"
 
 ## shape county data
 county_data <- county_data %>%
@@ -96,11 +104,27 @@ state_map <- state_map %>%
 
 remove(state_data)
 
-## shape population data; incorporate into 
+## shape us map data
+us_map <- us_map %>%
+  as_tibble() %>%
+  filter(region == "main") %>%
+  rename(lon = long)
+
+## shape population data; incorporate into county object
 population <- population %>%
   mutate(county = str_remove_all(county, ".*US"))
 county_data <- county_data %>%
   left_join(select(population, county, population), by = "county")
+
+## incorporate population into cbsa object
+temp <- county_data %>%
+  filter(!is.na(cbsa)) %>%
+  group_by(cbsa) %>%
+  summarize(population = sum(population))
+cbsa_data <- cbsa_data %>%
+  left_join(temp, by = "cbsa") %>%
+  arrange(desc(population))
+remove(temp)
 
 ## add county fips codes to county map data
 county_map <- county_map %>%
@@ -140,57 +164,86 @@ county_map <- county_map %>%
   left_join(select(county_data, county_name, county), by = "county_name") %>%
   filter(!is.na(county))
 
-# ## DETERMINE BASIC COUNTY RELATIONSHIPS ========================================
-# 
-# ## calculate geographic distance between counties
-# distance_matrix <- county_data %>%
-#   select(lon, lat) %>%
-#   as.matrix %>%
-#   spDists(longlat = TRUE)
-# colnames(distance_matrix) <- county_data$county
-# distance_matrix <- distance_matrix %>%
-#   as_tibble() %>%
-#   mutate(origin = county_data$county) %>%
-#   pivot_longer(cols = county_data$county, names_to = "dest") %>%
-#   mutate(key = paste(origin, dest, sep = "_")) %>%
-#   arrange(key)
-# 
-# ## determine which counties share a border
-# adjacent_counties <- county_map %>%
-#   mutate(key = paste(round(lon, 2), round(lat, 2))) %>%
-#   select(county, key)
-# adjacent_counties <- left_join(adjacent_counties, adjacent_counties,
-#   by = "key") %>%
-#   select(-key) %>%
-#   unique() %>%
-#   rename(origin = county.x, dest = county.y) %>%
-#   mutate(value = 1, key = paste(origin, dest, sep = "_")) %>%
-#   arrange(key)
-# 
-# ## determine which counties are part of the same state
-# same_state <- outer(county_data$state, county_data$state, FUN = "==")
-# colnames(same_state) <- county_data$county
-# same_state <- as_tibble(same_state) %>%
-#   mutate(origin = county_data$county) %>%
-#   pivot_longer(cols = county_data$county, names_to = "dest") %>%
-#   filter(value) %>%
-#   mutate(value = as.numeric(value), key = paste(origin, dest, sep = "_")) %>%
-#   arrange(key)
+## PRECALCULATE ALTERNATIVE STATES ASSIGNMENTS AS MUCH AS POSSIBLE =============
+county_data$cbsa[county_data$county == "24023"] <- "25180"
+county_data$cbsa[county_data$county == "24021"] <- NA
+cbsa_data$unified_state <- cbsa_data$state
+cbsa_data$unified_state[cbsa_data$cbsa == "28140"] <- "KS"
+cbsa_data$unified_state[cbsa_data$cbsa == "19340"] <- "IA"
+cbsa_data$unified_state[cbsa_data$cbsa == "45500"] <- "AR"
+cbsa_data$unified_state[cbsa_data$cbsa == "49020"] <- "WV"
+cbsa_data$unified_state[cbsa_data$cbsa == "14140"] <- "VA"
+cbsa_data$unified_state[cbsa_data$cbsa == "25180"] <- "WV"
+cbsa_data$unified_state[cbsa_data$cbsa == "19060"] <- "WV"
+
+county_data <- county_data %>%
+  left_join(select(cbsa_data, cbsa, unified_state), by = "cbsa") %>%
+  mutate(unified_state = if_else(!is.na(unified_state), unified_state, state))
+
+## split mega-cities off from their states
+mega_population <- cbsa_data %>%
+  filter(population >= 5 * 10^6) %>%
+  select(cbsa, population, cbsa_name) %>%
+  rename(mega_population = population) %>%
+  mutate(
+    mega_name = str_replace_all(cbsa_name, "([A-Z][a-z]{3,3})[a-z]*", "\\1") %>%
+      str_replace_all("( [A-Z][a-z]).*", "\\1") %>%
+      str_replace_all("^([A-Z][a-z])[^ ]* ", "\\1")
+    )
+
+county_data <- county_data %>%
+  left_join(mega_population, by = "cbsa") %>%
+  mutate(mega_population = if_else(is.na(mega_population), 0, mega_population))
+remove(mega_population)
+
+## DECLARE INEQUALITY MEASUREMENT FUNCTION =====================================
+
+MeasureInequality <- function(state_col, c_data = county_data) {
+  inequality <- c_data %>%
+    rename(state_col = starts_with(state_col)) %>%
+    group_by(state_col) %>%
+    summarize(area = sum(area), population = sum(population)) %>%
+    mutate(
+      area = area / sum(area),
+      population = population / sum(population),
+      weight = 1 / length(population)
+      ) %>%
+    arrange(area) %>%
+    mutate(
+      area_cum = 1 - cumsum(weight),
+      area_gini = area * (weight + 2 * area_cum)
+      ) %>%
+    arrange(population) %>%
+    mutate(
+      pop_cum = 1 - cumsum(weight),
+      pop_gini = population * (weight + 2 * pop_cum)
+      ) %>%
+    summarize(area = 1 - sum(area_gini), pop = 1 - sum(pop_gini)) %>%
+    unlist() %>%
+    round(digits = 3)
+
+  return(inequality)
+}
+
+## GENERATE STATE SPLITS =======================================================
+
+## generate projected coordinates for county centroids
+temp <- mapproject(x = county_data$lon, y = county_data$lat,
+  projection = "sinusoidal")
+county_data$x <- temp$x
+county_data$y <- temp$y
+remove(temp)
 
 ## EXPORT DATA =================================================================
 
 ## export area data
 saveRDS(county_data, file = "B_Intermediates/county_data.RData")
-saveRDS(cbsa_data,   file = "B_Intermediates/cbsa_data.RData")
+saveRDS(cbsa_data, file = "B_Intermediates/cbsa_data.RData")
 
 ## export map data
 saveRDS(county_map, file = "B_Intermediates/county_map.RData")
-saveRDS(state_map,  file = "B_Intermediates/state_map.RData")
-
-# ## export area relationships data
-# saveRDS(distance_matrix,   file = "B_Intermediates/distance_matrix.RData")
-# saveRDS(adjacent_counties, file = "B_Intermediates/adjacent_counties.RData")
-# saveRDS(same_state,        file = "B_Intermediates/same_state.RData")
+saveRDS(state_map, file = "B_Intermediates/state_map.RData")
+saveRDS(us_map, file = "B_Intermediates/us_map.RData")
 
 ##########==========##########==========##########==========##########==========
 
