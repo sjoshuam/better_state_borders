@@ -147,7 +147,7 @@ ui_q2_controls <- sidebarPanel(
     label = "Split Off All Metropolitan Areas Above This Population Size",
     min = 5, max = 20, value = 10, post = "m"
     ),
-  renderTable("largest_metros")
+  tableOutput("largest_metros")
   )
 
 ## generate reactive output
@@ -179,7 +179,7 @@ ui_q3_controls1 <- sidebarPanel(width = 2,
   
   checkboxInput(inputId = "merge_check4",
     label = paste(
-      "If you unified metropolitan areas in step 1, divide NJ between",
+      "If you unified the New York City metropolitan area, divide NJ between",
       "Philadelphia and New York City"
       ),
     value = TRUE)
@@ -543,6 +543,20 @@ output$map_two <- renderPlot({
       vjust = 1, hjust = 0,
       label = MeasureInequality(y2())
       )
+  })
+
+output$largest_metros <- renderTable({
+  cbsa_data %>%
+    arrange(desc(population)) %>%
+    filter(population >= 5 * 10^6) %>%
+    mutate(
+      population = round(population / 10^6, 1),
+      population = paste0(population, "m"),
+      state_all = str_replace_all(state_all, "-", ",\n")
+      ) %>%
+    select(cbsa_name, state_all, population) %>%
+    rename("Metro Area" = cbsa_name, " " = state_all,
+      "Pop." = population)
   })
 
 output$map_three <- renderPlot({
