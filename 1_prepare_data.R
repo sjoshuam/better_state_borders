@@ -225,14 +225,29 @@ MeasureInequality <- function(state_col, c_data = county_data) {
   return(inequality)
 }
 
-## GENERATE STATE SPLITS =======================================================
+## GENERATE PROJECTED COORDINATESS =============================================
+
+## move cbsa center closer to core city's center for exceptional cases
+i <- match(c("Riverside", "Flagstaff", "Phoenix"), cbsa_data$cbsa_name)
+cbsa_data[i, "lon"] <- c(-117.396, -111.631, -112.067)
+cbsa_data[i, "lat"] <- c(33.948,     35.199,   33.45)
 
 ## generate projected coordinates for county centroids
 temp <- mapproject(x = county_data$lon, y = county_data$lat,
-  projection = "sinusoidal")
+  projection = "sinusoidal", orientation = c(90, 0, -97.5))
 county_data$x <- temp$x
 county_data$y <- temp$y
 remove(temp)
+
+## generate projected coordinates for county centroids
+temp <- mapproject(x = cbsa_data$lon, y = cbsa_data$lat,
+  projection = "sinusoidal", orientation = c(90, 0, -97.5))
+cbsa_data$x <- temp$x
+cbsa_data$y <- temp$y
+remove(temp)
+
+#county_data[grep("Los Angeles", county_data$county_name),  c("x", "y")]
+#cbsa_data[grep("Los Angeles", cbsa_data$cbsa_name),  c("x", "y")]
 
 ## EXPORT DATA =================================================================
 
