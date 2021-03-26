@@ -167,6 +167,7 @@ county_map <- county_map %>%
 ## PRECALCULATE ALTERNATIVE STATES ASSIGNMENTS AS MUCH AS POSSIBLE =============
 county_data$cbsa[county_data$county == "24023"] <- "25180"
 county_data$cbsa[county_data$county == "24021"] <- NA
+county_data$cbsa[county_data$county == "24015"] <- NA
 cbsa_data$unified_state <- cbsa_data$state
 cbsa_data$unified_state[cbsa_data$cbsa == "28140"] <- "KS"
 cbsa_data$unified_state[cbsa_data$cbsa == "19340"] <- "IA"
@@ -179,6 +180,13 @@ cbsa_data$unified_state[cbsa_data$cbsa == "19060"] <- "WV"
 county_data <- county_data %>%
   left_join(select(cbsa_data, cbsa, unified_state), by = "cbsa") %>%
   mutate(unified_state = if_else(!is.na(unified_state), unified_state, state))
+
+county_data$unified_state[county_data$county == "51001"] <- "MD"
+county_data$unified_state[county_data$county == "51131"] <- "MD"
+
+## create flag for Michigan upper peninsula counties
+upper_peninsula <- c(26003, 26013, 26033, 26041, 26043, 26053, 26061, 26071,
+  26083, 26095, 26097, 26103, 26109, 26131, 26153) %>% as.character()
 
 ## split mega-cities off from their states
 mega_population <- cbsa_data %>%
@@ -245,9 +253,6 @@ temp <- mapproject(x = cbsa_data$lon, y = cbsa_data$lat,
 cbsa_data$x <- temp$x
 cbsa_data$y <- temp$y
 remove(temp)
-
-#county_data[grep("Los Angeles", county_data$county_name),  c("x", "y")]
-#cbsa_data[grep("Los Angeles", cbsa_data$cbsa_name),  c("x", "y")]
 
 ## EXPORT DATA =================================================================
 

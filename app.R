@@ -16,21 +16,30 @@ library(tidyverse)
 library(shiny)
 library(shinythemes)
 library(rsconnect)
+library(sf)
+
+warning("TODO: make MI upper peninsula, VA segment of DelMarVA into separate states")
+warning("TODO: Solve Currituck NC problem")
 
 ## READ IN DATA ================================================================
 
+## read in datasets
 county_data <- readRDS("B_Intermediates/county_data.RData")
 cbsa_data <- readRDS("B_Intermediates/cbsa_data.RData")
 county_map <- readRDS("B_Intermediates/county_map.RData")
 us_map <- readRDS("B_Intermediates/us_map.RData")
+
+## generate initial list of selectable states
 selectable_states <- c(
   "-", sort(c("DC", state.abb)),
   sort(unique(county_data$mega_name[!is.na(county_data$mega_name)]))
   )
 selectable_states <- selectable_states[!(selectable_states %in% c("HI", "AK"))]
 
-## generate crosswalk index for transferring county_data to county_map
-data_to_map <- match(county_map$county, county_data$county)
+## exclude counties that make map rendition more difficult
+exclude_list <- c("53055", "53029")
+county_data <- filter(county_data, !(county %in% exclude_list))
+county_map <- filter(county_map, !(county %in% exclude_list))
 
 ## UI === === === === === === === === === === === === === === === === === === ==
 ## UI === === === === === === === === === === === === === === === === === === ==
@@ -91,9 +100,11 @@ ui_intro <- column(width = 12,
     br(),
     "    6. Split Texas into three states (step 4)",
     br(), br(),
-    "After these changes, 90% of counties remain in the state that they are",
-    "currently in.  However, moving the other 10% of counties to a different",
-    "state reduces inequality by more than a quarter.  This suggests that",
+    "After these changes, 86% of counties remain in the state that they are",
+    "currently in.  However, moving the other counties to a different",
+    "state reduces inequality by more than a quarter and ensures that every",
+    "city falls completely under the jurisdiction on just one state.  This",
+    "suggests that",
     "small changes to the current state borders can accomplish significant",
     "results."
     ),
@@ -122,7 +133,7 @@ ui_q1_controls <- sidebarPanel(
   selectInput(
     inputId = "metro_unifier",
     label = "Only One State Within Each Metropolitan Area",
-    choices = c("No", "Yes")
+    choices = c("Yes", "No")
     )
 )
 
@@ -269,6 +280,50 @@ ui_q4_output <- mainPanel(plotOutput("map_four"))
 
 ## SERVER === === === === === === === === === === === === === === === === === ==
 ## SERVER === === === === === === === === === === === === === === === === === ==
+
+## declare state polygon generation function
+GenerateStatePolygons <- function(
+  new_states, c_data = county_data, c_map = county_map) {
+  
+  ## incorporate state assignments into objects
+  c_data$new_states <- new_states
+  remove(new_states)
+  c_map <- c_map %>%
+    left_join(select(c_data, county, new_states), by = "county")
+
+  ## convert map polygons into sf-format polygons
+  c_poly <- c_map %>% select(lon, lat, group) %>% as.data.frame()
+  c_poly <- split(select(c_poly, lon, lat), f = c_poly$group) %>%
+    lapply(as.matrix) %>%
+    lapply(list) %>%
+    lapply(st_polygon) %>%
+    lapply(st_buffer, dist = 10^-3)
+  
+  ## divide polygon list into states
+  i <- c_map$new_states[match(names(c_poly), as.character(c_map$group))]
+  c_poly <- tapply(c_poly, i, list)
+  remove(i)
+  
+  ## unify polygons in each state
+  Unify <- function(x) {
+    x %>%
+      st_sfc() %>%
+      st_combine() %>%
+      st_union(by_feature = TRUE)
+  }
+  c_poly <- lapply(c_poly, Unify)
+  
+  ## simplify polygon data to tidy format and express
+  c_poly <- lapply(c_poly, st_coordinates) %>%
+    lapply(function(x){x[, c("X", "Y")]})
+  c_poly <- data.frame(
+    "state" = rep(names(c_poly), sapply(c_poly, nrow)),
+    do.call(what = rbind, args = c_poly)
+  ) %>% as_tibble()
+  colnames(c_poly)[2:3] <- c("lon", "lat")
+  
+  return(c_poly)
+}
 
 ## declare color generation function
 StateColor <- function(state_col, the_map = county_map) {
@@ -499,12 +554,6 @@ map_base <- reactive({
     theme(legend.position = "none")
   })
 
-## color scheme
-c1 <- reactive({StateColor(y1()[data_to_map])[y1()[data_to_map]]})
-c2 <- reactive({StateColor(y2()[data_to_map])[y2()[data_to_map]]})
-c3 <- reactive({StateColor(y3()[data_to_map])[y3()[data_to_map]]})
-c4 <- reactive({StateColor(y4()[data_to_map])[y4()[data_to_map]]})
-
 ## calculate inequality
 i1 <- reactive({MeasureInequality(y1())})
 i2 <- reactive({MeasureInequality(y2())})
@@ -513,13 +562,19 @@ i4 <- reactive({MeasureInequality(y4())})
 
 ## RENDER MAPS =================================================================
 
+map_one <- reactive({GenerateStatePolygons(y1())})
+map_two <- reactive({GenerateStatePolygons(y2())})
+map_three <- reactive({GenerateStatePolygons(y3())})
+map_four <- reactive({GenerateStatePolygons(y4())})
+
 output$map_one <- renderPlot({
   map_base() +
     geom_polygon(
-      data = county_map,
-      mapping = aes(x = lon, y = lat, group = group),
-      color = c1(), fill = c1(),
-      size = 0.2
+      data = map_one(),
+      mapping = aes(x = lon, y = lat, group = state),
+      color = hsv(h = 196 / 360, s = 1.0, v = 0.5),
+      fill =  hsv(h = 196 / 360, s = 0.1, v = 1.0),
+      size = 0.3
       ) +
     geom_label(
       data = as_tibble(NA),
@@ -532,10 +587,11 @@ output$map_one <- renderPlot({
 output$map_two <- renderPlot({
   map_base() +
     geom_polygon(
-      data = county_map,
-      mapping = aes(x = lon, y = lat, group = group),
-      color = c2(), fill = c2(),
-      size = 0.2
+      data = map_two(),
+      mapping = aes(x = lon, y = lat, group = state),
+      color = hsv(h = 196 / 360, s = 1.0, v = 0.5),
+      fill =  hsv(h = 196 / 360, s = 0.1, v = 1.0),
+      size = 0.3
       ) +
     geom_label(
       data = as_tibble(NA),
@@ -562,10 +618,11 @@ output$largest_metros <- renderTable({
 output$map_three <- renderPlot({
   map_base() +
     geom_polygon(
-      data = county_map,
-      mapping = aes(x = lon, y = lat, group = group),
-      color = c3(), fill = c3(),
-      size = 0.2
+      data = map_three(),
+      mapping = aes(x = lon, y = lat, group = state),
+      color = hsv(h = 196 / 360, s = 1.0, v = 0.5),
+      fill =  hsv(h = 196 / 360, s = 0.1, v = 1.0),
+      size = 0.3
       ) +
     geom_label(
       data = as_tibble(NA),
@@ -578,10 +635,11 @@ output$map_three <- renderPlot({
 output$map_four <- renderPlot({
   map_base() +
     geom_polygon(
-      data = county_map,
-      mapping = aes(x = lon, y = lat, group = group),
-      color = c4(), fill = c4(),
-      size = 0.2
+      data = map_four(),
+      mapping = aes(x = lon, y = lat, group = state),
+      color = hsv(h = 196 / 360, s = 1.0, v = 0.5),
+      fill =  hsv(h = 196 / 360, s = 0.1, v = 1.0),
+      size = 0.3
       ) +
     geom_label(
       data = as_tibble(NA),
@@ -591,7 +649,6 @@ output$map_four <- renderPlot({
       )
   })
 
-  
 } # end of function
 
 ## EXECUTION === === === === === === === === === === === === === === === === ===
