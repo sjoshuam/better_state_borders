@@ -18,8 +18,8 @@ library(shinythemes)
 library(rsconnect)
 library(sf)
 
-warning("TODO: make MI upper peninsula, VA segment of DelMarVA into separate states")
-warning("TODO: Solve Currituck NC problem")
+warning("TODO: Solve disconnecte geography problem: Currituck NC, DelMarVa, UP")
+warning("TODO: Change-based color coding")
 
 ## READ IN DATA ================================================================
 
@@ -47,7 +47,7 @@ county_map <- filter(county_map, !(county %in% exclude_list))
 ## UI - INTRO ==================================================================
 
 ui_intro <- column(width = 12,
-  h3("A Four Step Process For Drawing Better State Borders"),
+  h3("Small Changes To The United States' State Borders Can Yield Big Improvements"),
   p(
     "The United States\' state borders do not divide the United States",
     "according to a grand plan.  The borders reflect historic events,",
@@ -58,18 +58,19 @@ ui_intro <- column(width = 12,
     "governance."
     ),
   p(
-    "However, four kinds of border changes could potentially make states",
+    "However, three kinds of border changes could potentially make states",
     "less unequal.  Using this tool, you can apply those changes in various",
-    "ways and see the results.  The four changes are:",
+    "ways and see the results.  The three changes are:",
     br(), br(),
-    "1. Consolidate each metropolitan areas into the jurisdiction of just one",
-    "state",
+    "1. Move counties from one state to another, so that states are",
+    "geographically contiguous and each metropolitan area falls entirely in",
+    "one state's jurisdiction",
     br(),
-    "2. Split the largest metropolitan areas into separate states",
+    "2. Merge small states into other states, so that states are more equal",
+    "in terms of population and land area",
     br(),
-    "3. Merge small states into other states",
-    br(),
-    "4. Split large states into multiple smaller states"
+    "3. Split large states into multiple smaller states, so that states are",
+    "more equal in terms of population and land area"
     ),
   p(
     "For each change, you can choose whether to implement the change and how",
@@ -84,35 +85,18 @@ ui_intro <- column(width = 12,
     ),
   p(
     "To illustrate how different options affect the results, the tool starts",
-    " with some changes pre-loaded:",
-    br(), br(),
-    "\t1. Make the New York City and Los Angeles metropolitan areas into",
-    "separate states (step 2)",
-    br(),
-    "    2. Merge Vermont and Maine into New Hampshire (step 3)",
-    br(),
-    "    3. Merge West Virginia, Deleware, and the District of Columbia into",
-    "Maryland (step 3)",
-    br(),
-    "    4. Merge the remainder of New Jersey into Pennsylvania (step 3)",
-    br(),
-    "    5. Split the remainder of California into three states (step 4)",
-    br(),
-    "    6. Split Texas into three states (step 4)",
-    br(), br(),
-    "After these changes, 86% of counties remain in the state that they are",
-    "currently in.  However, moving the other counties to a different",
-    "state reduces inequality by more than a quarter and ensures that every",
-    "city falls completely under the jurisdiction on just one state.  This",
-    "suggests that",
-    "small changes to the current state borders can accomplish significant",
-    "results."
+    " with some changes pre-loaded. After these changes, 85% of counties are",
+    "in the same state that they are currently in.  However, population and",
+    "land area are more equally distributed, state borders are more",
+    "contiguous, and metropolitan areas are no longer split between different",
+    "state jurisdictions.  In short, small changes to the current state",
+    "borders can improve them significantly."
     ),
   p(
     "This tool may take a few seconds to fully load.   The tool is ready when",
     "the maps are visible.  Likewise, the tool may take a few seconds to",
     "implement changes when you select new options.  The tool is done",
-    "recalculating when the maps are no longer looked faded."
+    "recalculating when the maps no longer look faded."
     )
   )
 
@@ -120,55 +104,60 @@ ui_intro <- column(width = 12,
 
 ## make panel title and explanatory text
 ui_q1_title <- column(width = 12,
-  h3("Step 1: Should each metropolitan area be in the jurisdiction of just",
-  "one state?"),
+  h3(
+    "How should state borders change to improve contiguity?"
+    ),
   p(style = "max-width: 33%;",
-    "Many large metropolitan areas span across multiple states. Select \"Yes\"",
-    "to unite these areas into one state's jurisdiction."
+    "EXPLANATION HERE"
     )
   )
 
 ## make control panel
 ui_q1_controls <- sidebarPanel(
-  selectInput(
+  checkboxInput(
     inputId = "metro_unifier",
-    label = "Only One State Within Each Metropolitan Area",
-    choices = c("Yes", "No")
+    label = "Place each metropolitan area entirely in one state",
+    value = TRUE
+    ),
+  checkboxInput(
+    inputId = "mi_upper_peninsula_check",
+    label = "Make MI's upper peninsula part of WI",
+    value = TRUE
+    ),
+  checkboxInput(
+    inputId = "fl_panhandle_check",
+    label = "Make FL's panhandle (west of Tallahassee) part of AL",
+    value = TRUE
+    ),
+  checkboxInput(
+    inputId = "va_delmarva_check",
+    label = "Make VA's section of the Delmarva peninsula part of MD",
+    value = TRUE
+    ),
+  checkboxInput(
+    inputId = "md_defrag_check",
+    label = "Defragment the MD border",
+    value = TRUE
+    ),
+  checkboxInput(
+    inputId = "ok_panhandle",
+    label = "Make the OK panhandle part of KS",
+    value = TRUE
+    ),
+  sliderInput(inputId = "mega_slider",
+    label = "Make separate states of metropolitan areas above this population size",
+    min = 5, max = 20, value = 10, post = "m"
     )
 )
 
 ## generate reactive output
 ui_q1_output <- mainPanel(plotOutput("map_one"))
 
-## UI - PANEL 2 ================================================================
-
-## make panel title and explanatory text
-ui_q2_title <- column(width = 12,
-  h3("Step 2: Should populous metropolitan areas be separate states?"),
-  p(style = "max-width: 33%;",
-    "Select a population threshold.  Metropolitan areas with a population",
-    " greater than the threshold will split off from their state.",
-    "  I recommend setting the threshold at 10 million."
-    )
-  )
-
-## section control widgets
-ui_q2_controls <- sidebarPanel(
-  sliderInput(inputId = "mega_slider",
-    label = "Split Off All Metropolitan Areas Above This Population Size",
-    min = 5, max = 20, value = 10, post = "m"
-    ),
-  tableOutput("largest_metros")
-  )
-
-## generate reactive output
-ui_q2_output <- mainPanel(plotOutput("map_two"))
-
 ## UI - PANEL 3 ================================================================
 
 ## make panel title and explanatory text
 ui_q3_title <- column(width = 12,
-  h3("Step 3: Which states should merge into bigger states?"),
+  h3("Which states should merge into bigger states?"),
   p(style = "max-width: 33%;",
     "Select which states should merge into other states.",
     " The states on the left will be merged into the states on the right.",
@@ -233,7 +222,7 @@ ui_q3_output <- mainPanel(plotOutput("map_three"))
 
 ## make panel title and explanatory text
 ui_q4_title <- column(width = 12,
-  h3("Step 4: Which states should split into smaller states?"),
+  h3("Which states should split into smaller states?"),
   p(style = "max-width: 33%;",
     "Select which states should split into 2-4 smaller states",
     "  I recommend selecting all of the checkboxes."
@@ -282,22 +271,42 @@ ui_q4_output <- mainPanel(plotOutput("map_four"))
 ## SERVER === === === === === === === === === === === === === === === === === ==
 
 ## declare state polygon generation function
+## Currituck, Dare, Hyde, Carteret
+extra_buffer_list <- c(
+  "37041", # Chowan NC
+  "37139", # Pasquotank NC
+  "37143", # Perquimans NC
+  "37015", # Bertie NC
+  "37053", # Currituck NC
+  "37187", # Washington NC
+  "99999"
+  )
 GenerateStatePolygons <- function(
-  new_states, c_data = county_data, c_map = county_map) {
+  new_states, c_data = county_data, c_map = county_map,
+  extra_buffer = extra_buffer_list) {
   
   ## incorporate state assignments into objects
   c_data$new_states <- new_states
   remove(new_states)
-  c_map <- c_map %>%
-    left_join(select(c_data, county, new_states), by = "county")
+  
+  c_map <- left_join(c_map, c_data[, c("county", "new_states")],
+    by = "county")
 
   ## convert map polygons into sf-format polygons
-  c_poly <- c_map %>% select(lon, lat, group) %>% as.data.frame()
-  c_poly <- split(select(c_poly, lon, lat), f = c_poly$group) %>%
-    lapply(as.matrix) %>%
-    lapply(list) %>%
-    lapply(st_polygon) %>%
-    lapply(st_buffer, dist = 10^-3)
+  c_poly <- as.data.frame(c_map[, c("lon", "lat", "group")])
+  c_poly <- split(select(c_poly, lon, lat), f = c_poly$group)
+  c_poly <- lapply(c_poly, as.matrix)
+  c_poly <- lapply(c_poly, list)
+  c_poly <- lapply(c_poly, st_polygon)
+  c_poly <- lapply(c_poly, st_buffer, dist = 10^-3)
+
+  if (!is.null(extra_buffer)) {
+    extra_buffer <- c_map$group[c_map$county %in% extra_buffer] %>%
+      unique() %>%
+      as.character()
+    c_poly[extra_buffer] <- lapply(
+      c_poly[extra_buffer], st_buffer, dist = 10^-1.1)
+    }
   
   ## divide polygon list into states
   i <- c_map$new_states[match(names(c_poly), as.character(c_map$group))]
@@ -306,12 +315,12 @@ GenerateStatePolygons <- function(
   
   ## unify polygons in each state
   Unify <- function(x) {
-    x %>%
-      st_sfc() %>%
-      st_combine() %>%
-      st_union(by_feature = TRUE)
+    x <- sf::st_sfc(x)
+    x <- sf::st_combine(x)
+    x <- sf::st_union(x, by_feature = TRUE)
+    return(x)
   }
-  c_poly <- lapply(c_poly, Unify)
+  c_poly <- lapply(X = c_poly, FUN = Unify)
   
   ## simplify polygon data to tidy format and express
   c_poly <- lapply(c_poly, st_coordinates) %>%
@@ -325,70 +334,8 @@ GenerateStatePolygons <- function(
   return(c_poly)
 }
 
-## declare color generation function
-StateColor <- function(state_col, the_map = county_map) {
-  
-  ## incorporate new state assignments into count
-  the_map$the_state <- state_col
-  
-  ## filter down county data
-  the_map$key <- paste(round(the_map$lon, 1), round(the_map$lat, 1))
-  the_map <- filter(the_map, !duplicated(paste(the_map$key, the_map$state)))
-  
-  
-  ## find which states are adjacent
-  adj_list <- the_map %>%
-    select(key, the_state)
-  adj_list <- left_join(adj_list, adj_list, by = "key") %>%
-    select(the_state.x, the_state.y) %>%
-    unique()
-  
-  ## generate a starting list of colors
-  color_list <- as.matrix(adj_list) %>% as.vector() %>% unique()
-  color_list <- setNames(
-    rep(seq(12), times = 8)[seq(length(color_list))],
-    color_list
-    )
-  
-  ## detect adjacent states with the same color
-  adj_list <- adj_list %>%
-    filter(the_state.x != the_state.y) %>%
-    mutate(
-      color.x = color_list[the_state.x],
-      color.y = color_list[the_state.y],
-      same_color = color.x == color.y
-      )
-
-  needs_revision <- unique(adj_list$the_state.x[adj_list$same_color])
-  
-  while(length(needs_revision) > 0) {
-    
-    color_options <- adj_list$color.y[adj_list$the_state.x == needs_revision[1]]
-    color_options <- seq(12)[!(seq(12) %in% color_options)]
-    color_list[needs_revision[1]] <- color_options[1]
-    
-    adj_list <- adj_list %>%
-      mutate(
-        color.x = color_list[the_state.x],
-        color.y = color_list[the_state.y],
-        same_color = color.x == color.y
-        )
-    needs_revision <- unique(adj_list$the_state.x[adj_list$same_color])
-    
-  }
-  
-  ## generate colors
-  h <- c(1 / 12, 9 / 12, 7 / 12) %>% rep(times = 4)
-  v <- seq(from = 0.5, to = 0.9, length.out = 4) %>% rep(each = 3)
-  
- color_list <- setNames(hsv(h = h, s = 0.7, v = v)[color_list],
-   names(color_list))
-   
- return(color_list) 
-}
-
 ## declare split state assignment function
-SplitStates <- function(the_state, n, state_col, c_data = county_data,
+SplitStates_Tidy <- function(the_state, n, state_col, c_data = county_data,
   m_data = cbsa_data) {
   
   if (the_state == "-") return(rep(NA, nrow(c_data)))
@@ -425,8 +372,43 @@ SplitStates <- function(the_state, n, state_col, c_data = county_data,
   return(the_result)
 }
 
+SplitStates_Untidy <- function(the_state, n, state_col, c_data = county_data,
+  m_data = cbsa_data) {
+
+  if (the_state == "-") return(rep(NA, nrow(c_data)))
+  
+  ## generate state population grid
+  k_data <- c_data
+  k_data$state_col <- state_col
+  k_data <- k_data[k_data$state_col == the_state, ]
+  k_data$population <- round(k_data$population / 10^3)
+  
+  k_centers <- k_data[rep(seq(nrow(k_data)), k_data$population), c("x", "y")]
+  k_centers <- as.matrix(k_centers)
+  
+  ## generate population-weighted k-means clusters
+  m_data <- m_data[, c("cbsa_name", "state", "x", "y", "population")]
+  m_data <- m_data[m_data$state == the_state, ]
+  m_data <- arrange(m_data, desc(population))
+  m_data <- m_data[seq(n), c("x", "y")]
+  m_data <- as.matrix(m_data)
+  k_centers <- kmeans(k_centers, centers = m_data, iter.max = 10^3, nstart = 1)
+  k_centers <- k_centers$centers
+  
+  ## assign counties to state partitions
+  partition <- outer(k_data$x, k_centers[, "x"], FUN = "-")^2 +
+    outer(k_data$y, k_centers[, "y"], FUN = "-")^2
+  partition <- apply(partition, MARGIN = 1, FUN = which.min)
+  partition <- paste0(the_state, partition)
+  
+  ## expand vector and return
+  the_result <- rep(NA, nrow(c_data))
+  the_result[state_col == the_state] <- partition
+  return(the_result)
+  }
+
 ## declare inequality measurement function
-MeasureInequality <- function(state_col, c_data = county_data) {
+MeasureInequality_Tidy <- function(state_col, c_data = county_data) {
   
   ##
   state_col <- str_remove_all(state_col, "1$")
@@ -470,25 +452,94 @@ MeasureInequality <- function(state_col, c_data = county_data) {
   return(inequality)
 }
 
+MeasureInequality_Untidy <- function(state_col, c_data = county_data) {
+  
+  ##
+  state_col <- str_remove_all(state_col, "1$")
+  
+  ## calculate inequality
+  c_data$state_col <- state_col
+  
+  inequality <- group_by(c_data, state_col) %>%
+    summarize(area = sum(area), population = sum(population))
+  
+  inequality$area <- inequality$area / sum(inequality$area)
+  inequality$population <- inequality$population / sum(inequality$population)
+  inequality$weight <- 1 / nrow(inequality)
+  
+  inequality <- arrange(inequality, area)
+  
+  inequality$area_cum <- 1 - cumsum(inequality$weight)
+  inequality$area_gini <- inequality$area * (
+    inequality$weight + 2 * inequality$area_cum)
+  
+  inequality <- arrange(inequality, population)
+  
+  inequality$pop_cum <- 1 - cumsum(inequality$weight)
+  inequality$pop_gini <- inequality$population * (
+    inequality$weight + 2 * inequality$pop_cum)
+  
+  inequality <- c(
+    area = 1 - sum(inequality$area_gini),
+    pop = 1 - sum(inequality$pop_gini)
+    )
+  
+  
+  ## calculate change from current states
+  inequality["change"] <- 1 -  mean(c_data$state == state_col)
+  inequality["combined"] <- sqrt(inequality["pop"] * inequality["area"])
+  inequality["combined"] <- inequality["combined"]
+  inequality <- round(inequality, 2) * 100
+  
+  inequality <- paste0(
+    "Population inequality:  ", inequality["pop"], "%\n",
+    " Land area inequality:  ", inequality["area"], "%\n",
+    " Combined inequality:  ", inequality["combined"], "%\n",
+    "Change from current borders:  ", inequality["change"], "%"
+    )
+
+  return(inequality)
+}
+
+SplitStates <- SplitStates_Tidy
+MeasureInequality <- MeasureInequality_Tidy
+
 ## initialize server
 server <- function(input, output) {
-  
-## DECISION-MAKING =============================================================
-  
-y0 <- reactive({county_data$state})
-y1 <- reactive({
-  if (input$metro_unifier == "Yes") county_data$unified_state else y0()
-  })
+output$start_time <- reactive({print(Sys.time())})
 
-y2 <- reactive({
-  if_else(county_data$mega_population > input$mega_slider * 10^6,
-    county_data$mega_name, y1())
+## DECISION-MAKING =============================================================
+
+y1 <- reactive({
+  
+  ## pre-set action
+  if (input$metro_unifier) new_states <- county_data$unified_state else {
+    new_states <- county_data$state}
+  contiguous <- county_data$contiguous_state
+  if (input$mi_upper_peninsula_check) new_states[contiguous == "WI->MI"] <- "WI"
+  if (input$fl_panhandle_check) new_states[contiguous == "AL->FL"] <- "AL"
+  if (input$va_delmarva_check) new_states[contiguous == "MD->VA"] <- "MD"
+  if (input$md_defrag_check) new_states[contiguous == "WV->MD"] <- "WV"
+  if (input$md_defrag_check) new_states[contiguous == "MD->MD"] <- "MD"
+  if (input$md_defrag_check) new_states[contiguous == "DC->MD"] <- "DC"
+  if (input$ok_panhandle) new_states[contiguous == "KS->OK"] <- "KS"
+  if (input$mi_upper_peninsula_check & input$metro_unifier) {
+    new_states[county_data$county == "55037"] <- "WI"
+    }
+  
+  ## custom actions
+  new_states <- if_else(county_data$mega_population > input$mega_slider * 10^6,
+    county_data$mega_name, new_states)
+
+  
+  return(new_states)
+  
   })
 
 y3 <- reactive({
   
   ## object preparation
-  new_states <- y2()
+  new_states <- y1()
   ReplaceState <- function(x, y, dat = new_states) {
     dat[dat %in% x] <- y
     return(dat)
@@ -556,14 +607,12 @@ map_base <- reactive({
 
 ## calculate inequality
 i1 <- reactive({MeasureInequality(y1())})
-i2 <- reactive({MeasureInequality(y2())})
 i3 <- reactive({MeasureInequality(y3())})
 i4 <- reactive({MeasureInequality(y4())})
 
 ## RENDER MAPS =================================================================
 
 map_one <- reactive({GenerateStatePolygons(y1())})
-map_two <- reactive({GenerateStatePolygons(y2())})
 map_three <- reactive({GenerateStatePolygons(y3())})
 map_four <- reactive({GenerateStatePolygons(y4())})
 
@@ -583,37 +632,6 @@ output$map_one <- renderPlot({
       label = MeasureInequality(y1())
       )
 })
-
-output$map_two <- renderPlot({
-  map_base() +
-    geom_polygon(
-      data = map_two(),
-      mapping = aes(x = lon, y = lat, group = state),
-      color = hsv(h = 196 / 360, s = 1.0, v = 0.5),
-      fill =  hsv(h = 196 / 360, s = 0.1, v = 1.0),
-      size = 0.3
-      ) +
-    geom_label(
-      data = as_tibble(NA),
-      x = -120.5, y = 27,
-      vjust = 1, hjust = 0,
-      label = MeasureInequality(y2())
-      )
-  })
-
-output$largest_metros <- renderTable({
-  cbsa_data %>%
-    arrange(desc(population)) %>%
-    filter(population >= 5 * 10^6) %>%
-    mutate(
-      population = round(population / 10^6, 1),
-      population = paste0(population, "m"),
-      state_all = str_replace_all(state_all, "-", ",\n")
-      ) %>%
-    select(cbsa_name, state_all, population) %>%
-    rename("Metro Area" = cbsa_name, " " = state_all,
-      "Pop." = population)
-  })
 
 output$map_three <- renderPlot({
   map_base() +
@@ -649,7 +667,8 @@ output$map_four <- renderPlot({
       )
   })
 
-} # end of function
+output$end_time <- reactive({print(Sys.time())})
+} # end of server function
 
 ## EXECUTION === === === === === === === === === === === === === === === === ===
 ## EXECUTION === === === === === === === === === === === === === === === === ===
@@ -670,15 +689,6 @@ ui <- fluidPage(theme = shinytheme("cerulean"),
     mainPanel = ui_q1_output
     ),
   
-  ## panel 2
-  hr(),
-  fluidRow(ui_q2_title),
-  br(), br(),
-  sidebarLayout(
-    sidebarPanel = ui_q2_controls,
-    mainPanel = ui_q2_output
-    ),
-  
   ## panel 3
   hr(),
   fluidRow(ui_q3_title),
@@ -695,16 +705,12 @@ ui <- fluidPage(theme = shinytheme("cerulean"),
   sidebarLayout(
     sidebarPanel = list(ui_q4_controls1, ui_q4_controls2),
     mainPanel = ui_q4_output
-    ), 
+    ),
   
+  textOutput("start_time"),
+  textOutput("end_time")  
   )
 
-
 shinyApp(ui, server)
-# warning(
-#   paste("todo: program MSA table, drill out cm() issue",
-#     "generate static image with smooth borders",
-#     "Make NJ merge into PA if either separate NYC, or unified metros"
-#     ))
 
 ##########==========##########==========##########==========##########==========

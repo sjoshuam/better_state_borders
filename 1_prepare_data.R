@@ -165,9 +165,8 @@ county_map <- county_map %>%
   filter(!is.na(county))
 
 ## PRECALCULATE ALTERNATIVE STATES ASSIGNMENTS AS MUCH AS POSSIBLE =============
-county_data$cbsa[county_data$county == "24023"] <- "25180"
-county_data$cbsa[county_data$county == "24021"] <- NA
-county_data$cbsa[county_data$county == "24015"] <- NA
+
+## move metro's that are split evenly between cities into less populous state
 cbsa_data$unified_state <- cbsa_data$state
 cbsa_data$unified_state[cbsa_data$cbsa == "28140"] <- "KS"
 cbsa_data$unified_state[cbsa_data$cbsa == "19340"] <- "IA"
@@ -181,12 +180,29 @@ county_data <- county_data %>%
   left_join(select(cbsa_data, cbsa, unified_state), by = "cbsa") %>%
   mutate(unified_state = if_else(!is.na(unified_state), unified_state, state))
 
-county_data$unified_state[county_data$county == "51001"] <- "MD"
-county_data$unified_state[county_data$county == "51131"] <- "MD"
-
-## create flag for Michigan upper peninsula counties
-upper_peninsula <- c(26003, 26013, 26033, 26041, 26043, 26053, 26061, 26071,
-  26083, 26095, 26097, 26103, 26109, 26131, 26153) %>% as.character()
+## move counties as needed to make geographic areas more contiguous
+county_data <- county_data %>% mutate(contiguous_state = NA)
+FindCounties <- function(counties, code, c_data = county_data) {
+  counties <- as.character(counties)
+  counties <- c_data$county %in% counties
+  c_data$contiguous_state[counties] <- code
+  return(c_data)
+}
+county_data <- FindCounties(
+  counties = c(26003, 26013, 26033, 26041, 26043, 26053, 26061, 26071, 26083,
+    26095, 26097, 26103, 26109, 26131, 26153),
+  code = "WI->MI"
+  )
+county_data <- FindCounties(
+  counties = c(12033, 12113, 12091, 12131, 12059, 12133, 12005, 12063, 12013,
+    12045),
+  code = "AL->FL"
+  )
+county_data <- FindCounties(counties = c(51001, 51131), code = "MD->VA")
+county_data <- FindCounties(counties = c(24023, 24001), code = "WV->MD")
+county_data <- FindCounties(counties = c(24015), code = "MD->MD")
+county_data <- FindCounties(counties = c(24037), code = "DC->MD")
+county_data <- FindCounties(counties = c(40007, 40025, 40139), code = "KS->OK")
 
 ## split mega-cities off from their states
 mega_population <- cbsa_data %>%
@@ -254,6 +270,64 @@ cbsa_data$x <- temp$x
 cbsa_data$y <- temp$y
 remove(temp)
 
+## GENERATE BRIDGES BETWEEN DISCONNECTED GEOGRAPHIES ===========================
+
+IncorporateBridge <- function(the_county, bridge_poly, c_map = county_map){
+
+  ## combine polygons
+  all_poly <- county_map %>%
+    filter(county == the_county) %>%
+    select(lon, lat) %>%
+    list(bridge_poly) %>%
+    lapply(as.matrix) %>%
+    lapply(list) %>%
+    lapply(st_polygon) %>%
+    st_sfc() %>%
+    st_combine() %>%
+    st_union(by_feature = TRUE) %>%
+    st_coordinates() %>%
+    as_tibble()
+
+  ## format for reintroduction
+  all_poly <- all_poly[, 1:2]
+  colnames(all_poly) <- c("lon", "lat")
+  all_poly$county <- the_county
+  all_poly$order <- seq(nrow(all_poly)) + max(c_map$order)
+  all_poly <- all_poly %>%
+    left_join(
+      filter(c_map, county == the_county) %>% select(-lon, -lat, -order),
+      by = "county")
+  all_poly <- all_poly[, colnames(c_map)]
+  
+  ## reintroduce the new data
+  c_map <- c_map %>%
+    filter(county != the_county) %>%
+    bind_rows(all_poly)
+
+  return(c_map)
+  }
+
+## MI Upper Peninsula (26097)
+bridge_polygon = tibble(
+    "lon" = c(-84.721703, -84.731913, -84.732425, -84.726080, -84.721703),
+    "lat" = c( 45.8579, 45.7882, 45.7882, 45.8579, 45.8579)
+    )
+county_map <- IncorporateBridge("26097", bridge_poly = bridge_polygon)
+
+# ## NC Chowan (37041)
+# bridge_polygon = tibble(
+#     "lon" = c(-76.520715, -76.516389, -76.478931, -76.484562, -76.520715),
+#     "lat" = c(36.016351, 36.016183, 35.942971, 35.941078, 36.016351)
+#     )
+# county_map <- IncorporateBridge("37041", bridge_poly = bridge_polygon)
+
+## VA Northampton (51131)
+bridge_polygon = tibble(
+    "lon" = c(-75.948098,-76.008485,-76.040573,-75.966278,-75.948098),
+    "lat" = c(37.120555+10^-2,36.912550,36.914110,37.120654+10^-2,37.120555+10^-2)
+    )
+county_map <- IncorporateBridge("51131", bridge_poly = bridge_polygon)
+
 ## EXPORT DATA =================================================================
 
 ## export area data
@@ -266,4 +340,13 @@ saveRDS(state_map, file = "B_Intermediates/state_map.RData")
 saveRDS(us_map, file = "B_Intermediates/us_map.RData")
 
 ##########==========##########==========##########==========##########==========
+# i <- as.character(c(20153, 20039, 20137, 20147, 20183, 20089, 20157, 20201, 20117, 20131,
+#   20013, 20043))
+# plot(select(filter(county_map, county %in% i), lon, lat), asp = 1, type = "l",
+#   col = "transparent")
+# for(iter in i) {
+# polygon(select(filter(county_map, county == iter), lon, lat))
+# }
+
+#plot(select(filter(county_map, county == "37187"), lon, lat), type = "l", asp =1)
 
