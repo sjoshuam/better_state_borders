@@ -289,10 +289,13 @@ GenerateStatePolygons <- function(new_states, s_poly = state_polygon,
   remove(i)
   
   ## replace county polygons with fast-load state polygons where possible
-  unchanged_state <- c_map$unified_state == c_map$new_states
-  unchanged_state <- tapply(unchanged_state, c_map$new_states, mean)
-  unchanged_state <- names(unchanged_state)[unchanged_state == 1]
-  c_poly[unchanged_state] <- NULL
+  county_count    <- tapply(c_map$new_states, c_map$new_states, length)
+  unchanged_count <- tapply(c_map$unified_state, c_map$unified_state, length)
+  unchanged_count <- unchanged_count[names(county_count)]
+  unchanged_count[is.na(unchanged_count)] <- -Inf
+  county_count <- names(county_count)[county_count == unchanged_count]
+  c_poly[county_count] <- NULL
+  remove(unchanged_count)
   
   ## unify polygons in each state
   Unify <- function(x) {
@@ -302,7 +305,7 @@ GenerateStatePolygons <- function(new_states, s_poly = state_polygon,
     return(x)
   }
   c_poly <- lapply(X = c_poly, FUN = Unify)
-  c_poly[unchanged_state] <- s_poly[unchanged_state]
+  c_poly[county_count] <- s_poly[county_count]
   
   ## simplify polygon data to tidy format and express
   c_poly <- lapply(c_poly, st_coordinates) %>%
