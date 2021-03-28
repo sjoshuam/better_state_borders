@@ -15,6 +15,7 @@ library(tidyverse)
 library(foreign)
 library(sp)
 library(mapproj)
+library(sf)
 
 ## READ IN DATA ================================================================
 
@@ -164,6 +165,11 @@ county_map <- county_map %>%
   left_join(select(county_data, county_name, county), by = "county_name") %>%
   filter(!is.na(county))
 
+## exclude counties that make map rendition more difficult
+exclude_list <- c("53055", "53029")
+county_data <- filter(county_data, !(county %in% exclude_list))
+county_map <- filter(county_map, !(county %in% exclude_list))
+
 ## PRECALCULATE ALTERNATIVE STATES ASSIGNMENTS AS MUCH AS POSSIBLE =============
 
 ## move metro's that are split evenly between cities into less populous state
@@ -176,9 +182,18 @@ cbsa_data$unified_state[cbsa_data$cbsa == "14140"] <- "VA"
 cbsa_data$unified_state[cbsa_data$cbsa == "25180"] <- "WV"
 cbsa_data$unified_state[cbsa_data$cbsa == "19060"] <- "WV"
 
+  # "48181", # Grayson TX
+  # "48147", # Fannin TX
+  # "48097", # Cooke TX
+  # "48337", # Montague TX
+
 county_data <- county_data %>%
   left_join(select(cbsa_data, cbsa, unified_state), by = "cbsa") %>%
   mutate(unified_state = if_else(!is.na(unified_state), unified_state, state))
+
+## solve TX enclave problem
+county_data[county_data$county == "48181", "cbsa"] <- "19100"
+
 
 ## move counties as needed to make geographic areas more contiguous
 county_data <- county_data %>% mutate(contiguous_state = NA)
@@ -328,6 +343,66 @@ bridge_polygon = tibble(
     )
 county_map <- IncorporateBridge("51131", bridge_poly = bridge_polygon)
 
+## PRE-CALCULATE SF FORMAT COUNTY POLYGONS =====================================
+
+## pre-calculate sf-format county polygons
+extra_buffer <- c(
+  "37041", # Chowan NC
+  "37139", # Pasquotank NC
+  "37143", # Perquimans NC
+  "37015", # Bertie NC
+  "37053", # Currituck NC
+  "37187", # Washington NC
+  "51810", # Virginia Beach NC
+  "37083", # Halifax NC,
+  "37029", # Camden NC
+  "37073", # Gates NC
+  "37091", # Hertford NC
+  # "48181", # Grayson TX
+  # "48147", # Fannin TX
+  # "48097", # Cooke TX
+  # "48337", # Montague TX
+  "99999"
+  )
+
+## convert map polygons into sf-format polygons
+county_polygon <- as.data.frame(county_map[, c("lon", "lat", "group")]) 
+county_polygon <- split(select(county_polygon, lon, lat), f = county_polygon$group)
+county_polygon <- lapply(county_polygon, as.matrix)
+county_polygon <- lapply(county_polygon, list)
+county_polygon <- lapply(county_polygon, st_polygon)
+county_polygon <- lapply(county_polygon, st_buffer, dist = 10^-3)
+
+if (!is.null(extra_buffer)) {
+  extra_buffer <- county_map$group[county_map$county %in% extra_buffer] %>%
+    unique() %>%
+    as.character()
+  county_polygon[extra_buffer] <- lapply(
+    county_polygon[extra_buffer], st_buffer, dist = 10^-1.2)
+}
+
+## divide polygon list into states
+county_map <- left_join(
+  county_map,
+  select(county_data, county, unified_state),
+  by = "county"
+  ) 
+
+
+i <- county_map$unified_state[match(names(county_polygon),
+  as.character(county_map$group))]
+state_polygon <- tapply(county_polygon, i, list)
+remove(i)
+  
+## unify polygons in each state
+Unify <- function(x) {
+  x <- sf::st_sfc(x)
+  x <- sf::st_combine(x)
+  x <- sf::st_union(x, by_feature = TRUE)
+  return(x)
+}
+state_polygon <- lapply(X = state_polygon, FUN = Unify)
+
 ## EXPORT DATA =================================================================
 
 ## export area data
@@ -339,14 +414,9 @@ saveRDS(county_map, file = "B_Intermediates/county_map.RData")
 saveRDS(state_map, file = "B_Intermediates/state_map.RData")
 saveRDS(us_map, file = "B_Intermediates/us_map.RData")
 
-##########==========##########==========##########==========##########==========
-# i <- as.character(c(20153, 20039, 20137, 20147, 20183, 20089, 20157, 20201, 20117, 20131,
-#   20013, 20043))
-# plot(select(filter(county_map, county %in% i), lon, lat), asp = 1, type = "l",
-#   col = "transparent")
-# for(iter in i) {
-# polygon(select(filter(county_map, county == iter), lon, lat))
-# }
+## export sf polygons
+saveRDS(county_polygon, file = "B_Intermediates/county_polygon.RData")
+saveRDS(state_polygon, file = "B_Intermediates/state_polygon.RData")
 
-#plot(select(filter(county_map, county == "37187"), lon, lat), type = "l", asp =1)
+##########==========##########==========##########==========##########==========
 

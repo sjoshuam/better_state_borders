@@ -18,7 +18,6 @@ library(shinythemes)
 library(rsconnect)
 library(sf)
 
-warning("TODO: Solve disconnecte geography problem: Currituck NC, DelMarVa, UP")
 warning("TODO: Change-based color coding")
 
 ## READ IN DATA ================================================================
@@ -28,6 +27,8 @@ county_data <- readRDS("B_Intermediates/county_data.RData")
 cbsa_data <- readRDS("B_Intermediates/cbsa_data.RData")
 county_map <- readRDS("B_Intermediates/county_map.RData")
 us_map <- readRDS("B_Intermediates/us_map.RData")
+county_polygon <- readRDS("B_Intermediates/county_polygon.RData")
+state_polygon <- readRDS("B_Intermediates/state_polygon.RData")
 
 ## generate initial list of selectable states
 selectable_states <- c(
@@ -35,11 +36,6 @@ selectable_states <- c(
   sort(unique(county_data$mega_name[!is.na(county_data$mega_name)]))
   )
 selectable_states <- selectable_states[!(selectable_states %in% c("HI", "AK"))]
-
-## exclude counties that make map rendition more difficult
-exclude_list <- c("53055", "53029")
-county_data <- filter(county_data, !(county %in% exclude_list))
-county_map <- filter(county_map, !(county %in% exclude_list))
 
 ## UI === === === === === === === === === === === === === === === === === === ==
 ## UI === === === === === === === === === === === === === === === === === === ==
@@ -93,8 +89,8 @@ ui_intro <- column(width = 12,
     "borders can improve them significantly."
     ),
   p(
-    "This tool may take a few seconds to fully load.   The tool is ready when",
-    "the maps are visible.  Likewise, the tool may take a few seconds to",
+    "This tool takes about five seconds to load.   The tool is ready when",
+    "the maps are visible.  Likewise, the tool takes up to five seconds to",
     "implement changes when you select new options.  The tool is done",
     "recalculating when the maps no longer look faded."
     )
@@ -108,7 +104,12 @@ ui_q1_title <- column(width = 12,
     "How should state borders change to improve contiguity?"
     ),
   p(style = "max-width: 33%;",
-    "EXPLANATION HERE"
+    "Select how state borders should change to make states geographically",
+    "contiguous.  Also select a population threshold.  Metropolitan areas",
+    "with a population above the threshold will split off into separate",
+    "states.  I recommend select all of the checkboxes and setting the",
+    "threshold at 10 million.  A threshold of 10 million splits the New York",
+    "City and Los Angeles metropolitan areas into separate states."
     )
   )
 
@@ -271,19 +272,9 @@ ui_q4_output <- mainPanel(plotOutput("map_four"))
 ## SERVER === === === === === === === === === === === === === === === === === ==
 
 ## declare state polygon generation function
-## Currituck, Dare, Hyde, Carteret
-extra_buffer_list <- c(
-  "37041", # Chowan NC
-  "37139", # Pasquotank NC
-  "37143", # Perquimans NC
-  "37015", # Bertie NC
-  "37053", # Currituck NC
-  "37187", # Washington NC
-  "99999"
-  )
-GenerateStatePolygons <- function(
-  new_states, c_data = county_data, c_map = county_map,
-  extra_buffer = extra_buffer_list) {
+
+GenerateStatePolygons <- function(new_states, s_poly = state_polygon,
+  c_data = county_data, c_map = county_map, c_poly = county_polygon) {
   
   ## incorporate state assignments into objects
   c_data$new_states <- new_states
@@ -291,27 +282,17 @@ GenerateStatePolygons <- function(
   
   c_map <- left_join(c_map, c_data[, c("county", "new_states")],
     by = "county")
-
-  ## convert map polygons into sf-format polygons
-  c_poly <- as.data.frame(c_map[, c("lon", "lat", "group")])
-  c_poly <- split(select(c_poly, lon, lat), f = c_poly$group)
-  c_poly <- lapply(c_poly, as.matrix)
-  c_poly <- lapply(c_poly, list)
-  c_poly <- lapply(c_poly, st_polygon)
-  c_poly <- lapply(c_poly, st_buffer, dist = 10^-3)
-
-  if (!is.null(extra_buffer)) {
-    extra_buffer <- c_map$group[c_map$county %in% extra_buffer] %>%
-      unique() %>%
-      as.character()
-    c_poly[extra_buffer] <- lapply(
-      c_poly[extra_buffer], st_buffer, dist = 10^-1.1)
-    }
   
   ## divide polygon list into states
   i <- c_map$new_states[match(names(c_poly), as.character(c_map$group))]
   c_poly <- tapply(c_poly, i, list)
   remove(i)
+  
+  ## replace county polygons with fast-load state polygons where possible
+  unchanged_state <- c_map$unified_state == c_map$new_states
+  unchanged_state <- tapply(unchanged_state, c_map$new_states, mean)
+  unchanged_state <- names(unchanged_state)[unchanged_state == 1]
+  c_poly[unchanged_state] <- NULL
   
   ## unify polygons in each state
   Unify <- function(x) {
@@ -321,6 +302,7 @@ GenerateStatePolygons <- function(
     return(x)
   }
   c_poly <- lapply(X = c_poly, FUN = Unify)
+  c_poly[unchanged_state] <- s_poly[unchanged_state]
   
   ## simplify polygon data to tidy format and express
   c_poly <- lapply(c_poly, st_coordinates) %>%
@@ -506,7 +488,7 @@ MeasureInequality <- MeasureInequality_Tidy
 
 ## initialize server
 server <- function(input, output) {
-output$start_time <- reactive({print(Sys.time())})
+output$start_time <- reactive({Sys.time()})
 
 ## DECISION-MAKING =============================================================
 
@@ -667,7 +649,7 @@ output$map_four <- renderPlot({
       )
   })
 
-output$end_time <- reactive({print(Sys.time())})
+output$end_time <- reactive({Sys.time()})
 } # end of server function
 
 ## EXECUTION === === === === === === === === === === === === === === === === ===
