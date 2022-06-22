@@ -28,14 +28,4 @@ in which to execute the scripts.
 
 ### Project Status and To-Dos
 
-I am actively building the code for this project.  Basic data shaping is done;
-now testing out border generation methods. Remaining to-dos include:
-
-- [ ] Complete README Description section
-- [ ] Complete README Scripts section
-- [ ] Write analysis script
-- [ ] Write static visualization script
-- [ ] Write dynamic visualization script
-- [ ] Build gallery entry
-- [ ] Make sure gallery, README, and tool text are aligned
-- [ ] Polish writing and grammar in all three sets of text
+This project is deprecated.  It will eventually be replaced with something more streamlined...
